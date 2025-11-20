@@ -1,0 +1,7 @@
+pandas
+scikit-learn
+xgboost
+lightgbm
+psycopg2-binary
+mlflow==2.17.2
+evidently

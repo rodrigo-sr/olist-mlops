@@ -1,0 +1,28 @@
+# .gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+venv/
+.env
+
+# Docker & Airflow
+logs/
+plugins/
+airflow-worker.pid
+airflow-webserver.pid
+
+# Dados e Artefatos (Não subir arquivos pesados)
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep  # Truque para manter a pasta vazia no git
+!data/processed/.gitkeep
+
+# MLflow (Artefatos locais)
+mlflow_artifacts/
+mlruns/
+
+# IDEs
+.vscode/
+.idea/

@@ -1,0 +1,127 @@
+services:
+  # PostgreSQL - Banco de dados para Airflow e MLflow
+  postgres:
+    image: postgres:14-alpine
+    container_name: mlops_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${POSTGRES_PORT}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init_db.sql:/docker-entrypoint-initdb.d/init_db.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mlops_network
+
+  # MLflow - Servidor de tracking de experimentos
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: mlops_mlflow
+    ports:
+      - "${MLFLOW_PORT}:5000"
+    environment:
+      BACKEND_STORE_URI: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/mlflow
+      ARTIFACT_ROOT: /mlflow/artifacts
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri postgresql://airflow:airflow@postgres:5432/mlflow
+      --default-artifact-root /mlflow/artifacts
+    volumes:
+      - ./mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mlops_network
+
+  # Airflow Webserver
+  airflow-webserver:
+    build: .
+    container_name: mlops_airflow_webserver
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}
+      AIRFLOW__CORE__FERNET_KEY: '${AIRFLOW_FERNET_KEY}'
+      AIRFLOW__WEBSERVER__SECRET_KEY: '${AIRFLOW_SECRET_KEY}'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: 'True'
+    ports:
+      - "${AIRFLOW_PORT}:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./mlflow_artifacts:/mlflow/artifacts
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+               airflow webserver"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mlops_network
+    restart: always
+
+  # Airflow Scheduler
+  airflow-scheduler:
+    build: .
+    container_name: mlops_airflow_scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}
+      AIRFLOW__CORE__FERNET_KEY: '${AIRFLOW_FERNET_KEY}'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./data:/opt/airflow/data
+      - ./mlflow_artifacts:/mlflow/artifacts
+    command: >
+      bash -c "airflow db init &&
+               sleep 10 &&
+               airflow scheduler"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mlops_network
+    restart: always
+
+  prediction_api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: mlops_api
+    ports: 
+      - "${API_PORT}:8000"
+    environment:
+      - MLFLOW_TRACKING_URI=http://mlops_mlflow:${MLFLOW_PORT}
+    volumes:
+      - ./mlflow_artifacts:/mlflow/artifacts
+    depends_on:
+      - mlflow
+    networks:
+      - mlops_network
+    restart: always
+
+
+volumes:
+  postgres_data:
+
+networks:
+  mlops_network:
+    driver: bridge

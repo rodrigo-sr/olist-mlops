@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+pandas
+pydantic
+mlflow==2.17.2
