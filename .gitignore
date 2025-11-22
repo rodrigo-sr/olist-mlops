@@ -26,3 +26,6 @@ mlruns/
 # IDEs
 .vscode/
 .idea/
+
+# Local ingestion scripts
+local/

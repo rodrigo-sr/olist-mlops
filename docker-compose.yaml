@@ -52,6 +52,8 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}
+      AIRFLOW_CONN_OLIST_POSTGRES: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      AIRFLOW_CONN_AWS_DEFAULT: 'aws://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000?extra=%7B%22endpoint_url%22%3A+%22http%3A%2F%2Fminio%3A9000%22%7D'
       AIRFLOW__CORE__FERNET_KEY: '${AIRFLOW_FERNET_KEY}'
       AIRFLOW__WEBSERVER__SECRET_KEY: '${AIRFLOW_SECRET_KEY}'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
@@ -82,6 +84,8 @@ services:
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}
+      AIRFLOW_CONN_OLIST_POSTGRES: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      AIRFLOW_CONN_AWS_DEFAULT: 'aws://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000?extra=%7B%22endpoint_url%22%3A+%22http%3A%2F%2Fminio%3A9000%22%7D'
       AIRFLOW__CORE__FERNET_KEY: '${AIRFLOW_FERNET_KEY}'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
     volumes:
@@ -117,10 +121,42 @@ services:
     networks:
       - mlops_network
     restart: always
+  
+  minio:
+    image: minio/minio:latest
+    container_name: mlops_minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    networks:
+      - mlops_network
+    volumes:
+      - minio_data:/data
+
+  # MinIO bucket
+  create_buckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    networks:
+      - mlops_network
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD}) do echo 'Waiting for MinIO...' && sleep 1; done;
+      usr/bin/mc mb myminio/landing;
+      usr/bin/mc mb myminio/processing;
+      usr/bin/mc mb myminio/curated;
+      exit 0;
+      "
 
 
 volumes:
   postgres_data:
+  minio_data:
 
 networks:
   mlops_network:
